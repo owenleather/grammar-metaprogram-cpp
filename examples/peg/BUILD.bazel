@@ -9,8 +9,15 @@ cc_library(
     deps = ["//source:grammar",]
 )
 
+cc_library(
+    name = "node_printer",
+    hdrs = ["node_printer.h"],
+    deps = ["//source:grammar",
+    ":syntax",]
+)
+
 cc_binary(
     name = "main",
     srcs = ["main.cpp"],
-    deps = [":syntax", "//source:node_printer",]
+    deps = [":syntax", ":node_printer",]
 )

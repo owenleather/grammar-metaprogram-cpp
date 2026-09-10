@@ -1,5 +1,5 @@
 #include "examples/peg/syntax.h"
-#include "source/node_printer.h"
+#include "examples/peg/node_printer.h"
 
 const std::string peg_grammar = R"(
 # Hierarchical syntax
@@ -45,6 +45,8 @@ Space <- ' ' / '\t' / EndOfLine
 EndOfLine <- '\r\n' / '\n' / '\r'
 EndOfFile <- !.
 )";
+
+// TODO (owen): It would be cool if I can codegen a peg metaprogram of peg code using the peg metaprogram
 
 int main() {
   language::Context ctx{.input = peg_grammar};

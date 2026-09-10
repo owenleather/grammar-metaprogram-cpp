@@ -44,54 +44,36 @@ struct EndOfFile {
 Return Types
 */
 
-template <typename Rule> struct ReturnTypeOf;
+template <typename T>
+struct get_tuple_base;
 
-// TODO (owen): Remove duplicates in the variant
-template <typename... Rules> struct ReturnTypeOf<std::variant<Rules...>> {
-  using type = std::variant<typename ReturnTypeOf<Rules>::type...>;
+// Matches std::tuple directly or via base-class conversion
+template <typename... Args>
+struct get_tuple_base<std::tuple<Args...>> {
+  using type = std::tuple<Args...>;
 };
 
-template <typename... Rules> struct ReturnTypeOf<std::tuple<Rules...>> {
-  using type = std::tuple<typename ReturnTypeOf<Rules>::type...>;
+template <typename Derived>
+  requires requires(Derived& d) {
+    []<typename... Args>(std::tuple<Args...>&){}(d);
+  }
+struct get_tuple_base<Derived> {
+ private:
+  template <typename... Args>
+  static std::tuple<Args...> extract(const std::tuple<Args...>*);
+
+ public:
+  using type = decltype(extract(std::declval<Derived*>()));
 };
 
-template <typename TargetRule>
-struct ReturnTypeOf<boost::recursive_wrapper<TargetRule>> {
-  using type = boost::recursive_wrapper<TargetRule>;
-};
-
-template <FixedString Pattern> struct ReturnTypeOf<Regex<Pattern>> {
-  using type = Regex<Pattern>;
-};
-
-template <typename Rule> struct ReturnTypeOf<std::vector<Rule>> {
-  using type = std::vector<typename ReturnTypeOf<Rule>::type>;
-};
-
-template <typename Condition> struct ReturnTypeOf<std::optional<Condition>> {
-  using type = std::optional<typename ReturnTypeOf<Condition>::type>;
-};
-
-template <typename Rule> struct ReturnTypeOf<Not<Rule>> {
-  using type = std::monostate;
-};
-
-template <typename Rule> struct ReturnTypeOf<And<Rule>> {
-  using type = std::monostate;
-};
-
-template <> struct ReturnTypeOf<EndOfFile> {
-  using type = EndOfFile;
-};
 
 /*
 Recursive Definition
 */
 template <typename GrammarT> struct Def {
   using Grammar = GrammarT;
-  using ReturnType = ReturnTypeOf<Grammar>::type;
-  ReturnType value;
-  Def(ReturnType t) : value(t) {};
+  Grammar value;
+  Def(Grammar t) : value(t) {};
 };
 
 /*
@@ -101,7 +83,7 @@ Matchers
 template <typename Rule> struct Matcher;
 
 template <FixedString Pattern> struct Matcher<Regex<Pattern>> {
-  using ReturnType = typename ReturnTypeOf<Regex<Pattern>>::type;
+  using ReturnType = Regex<Pattern>;
 
   static std::optional<Result<ReturnType>> Match(Context ctx) {
     static const std::regex re{"^(" + std::string(Pattern.value) + ")",
@@ -111,7 +93,7 @@ template <FixedString Pattern> struct Matcher<Regex<Pattern>> {
 };
 
 template <typename Head> struct Matcher<std::variant<Head>> {
-  using VariantType = typename ReturnTypeOf<std::variant<Head>>::type;
+  using VariantType = std::variant<Head>;
 
   static std::optional<Result<VariantType>> Match(Context ctx) {
     if (auto res = Matcher<Head>::Match(ctx)) {
@@ -124,7 +106,7 @@ template <typename Head> struct Matcher<std::variant<Head>> {
 
 template <typename Head, typename... Tail>
 struct Matcher<std::variant<Head, Tail...>> {
-  using VariantType = typename ReturnTypeOf<std::variant<Head, Tail...>>::type;
+  using VariantType = std::variant<Head, Tail...>;
 
   static std::optional<Result<VariantType>> Match(Context ctx) {
     auto head = Matcher<Head>::Match(ctx);
@@ -151,9 +133,10 @@ struct Matcher<std::variant<Head, Tail...>> {
   }
 };
 
+
 template <typename Head, typename... Tail>
 struct Matcher<std::tuple<Head, Tail...>> {
-  using TupleType = typename ReturnTypeOf<std::tuple<Head, Tail...>>::type;
+  using TupleType = std::tuple<Head, Tail...>;
 
   static std::optional<Result<TupleType>> Match(Context ctx) {
     auto head_res = Matcher<Head>::Match(ctx);
@@ -177,6 +160,27 @@ struct Matcher<std::tuple<Head, Tail...>> {
   }
 };
 
+
+template <typename T>
+  requires (!requires { typename Matcher<T>::TupleType; }) // avoids re-matching std::tuple itself
+        && requires { typename get_tuple_base<T>::type; }
+struct Matcher<T> {
+  using BaseTuple = typename get_tuple_base<T>::type;
+  using TupleType = typename Matcher<BaseTuple>::TupleType;
+
+  static std::optional<Result<T>> Match(Context ctx) {
+    const auto match = Matcher<BaseTuple>::Match(ctx);
+    if(!match) return std::nullopt;
+
+    T struct_val{std::move(match->value)};
+
+    return Result{
+      .ctx = match->ctx,
+      .value = std::move(struct_val)
+    };
+  }
+};
+
 template <typename Target> struct Matcher<boost::recursive_wrapper<Target>> {
   using ReturnType = boost::recursive_wrapper<Target>;
 
@@ -191,7 +195,7 @@ template <typename Target> struct Matcher<boost::recursive_wrapper<Target>> {
 };
 
 template <typename Rule> struct Matcher<std::vector<Rule>> {
-  using VecType = typename ReturnTypeOf<std::vector<Rule>>::type;
+  using VecType = std::vector<Rule>;
 
   static std::optional<Result<VecType>> Match(Context ctx) {
     Context current = ctx;
@@ -209,7 +213,7 @@ template <typename Rule> struct Matcher<std::vector<Rule>> {
 };
 
 template <typename Rule> struct Matcher<std::optional<Rule>> {
-  using OptType = typename ReturnTypeOf<std::optional<Rule>>::type;
+  using OptType = std::optional<Rule>;
 
   static std::optional<Result<OptType>> Match(Context ctx) {
     if (auto res = Matcher<Rule>::Match(ctx)) {
@@ -222,22 +226,22 @@ template <typename Rule> struct Matcher<std::optional<Rule>> {
 };
 
 template <typename Rule> struct Matcher<Not<Rule>> {
-  using ReturnType = std::monostate;
+  using ReturnType = Not<Rule>;
 
   static std::optional<Result<ReturnType>> Match(Context ctx) {
     if (auto res = Matcher<Rule>::Match(ctx)) {
       return std::nullopt;
     }
-    return Result{.ctx = ctx, .value = std::monostate()};
+    return Result{.ctx = ctx, .value = Not<Rule>{}};
   }
 };
 
 template <typename Rule> struct Matcher<And<Rule>> {
-  using ReturnType = std::monostate;
+  using ReturnType = And<Rule>;
 
   static std::optional<Result<ReturnType>> Match(Context ctx) {
     if (auto res = Matcher<Rule>::Match(ctx)) {
-      return Result{.ctx = ctx, .value = std::monostate()};
+      return Result{.ctx = ctx, .value = And<Rule>{}};
     }
     return std::nullopt;
   }

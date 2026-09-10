@@ -1,5 +1,6 @@
 #pragma once
 
+#include "examples/peg/syntax.h"
 #include "source/grammar.h"
 
 namespace language {
@@ -15,10 +16,30 @@ bool IsWhitespaceOnly(const std::string &str) {
                      [](unsigned char ch) { return std::isspace(ch); });
 }
 
+std::string ResolveIdentifier(const peg::Identifier &id) {
+    std::string identifier = std::get<0>(id).match;
+    const auto id_vec = std::get<1>(id);
+    for (const auto& i : id_vec) {
+        identifier += std::visit([](const auto& r){return r.match;}, i);
+    }
+    return identifier;
+}
+
 struct NodePrinter {
   size_t indent;
 
-  template <typename... T> void operator()(const std::tuple<T...> &tup) {
+  void operator()(const peg::Identifier &id) {
+    PrintIndent(indent);
+    std::cout << "Identifier(\"" + ResolveIdentifier(id) + "\")" << std::endl;
+  }
+
+  void operator()(const peg::LEFTARROW& l) {
+    PrintIndent(indent);
+    std::cout << "<-" << std::endl;
+  }
+
+  template <typename... T>
+  void operator()(const std::tuple<T...> &tup) {
     std::apply(
         [this](const auto &...element) {
           (NodePrinter{indent + 1}(element), ...);
@@ -27,10 +48,6 @@ struct NodePrinter {
   }
 
   template <typename T> void operator()(const boost::recursive_wrapper<T> &t) {
-    // NOTE (owen): t.get() returns the struct inheriting a Def. If I call
-    // .value on the def it gets the original type (i.e. tuple) and works.
-    // Otherwise it passes the def directly, and we need to unpack the def
-    // later.
     auto value = t.get().value;
     NodePrinter{indent}(value);
   }
@@ -61,13 +78,8 @@ struct NodePrinter {
   }
   void operator()(const std::monostate &m) {}
   void operator()(const EndOfFile &m) {}
-
-  template <typename T> void operator()(const Def<T> &d) {
-    std::cout << "def" << std::endl;
-  }
-
-  void operator()(const auto a) {
-    std::cout << "auto: " << typeid(a).name() << '\n';
-  }
+  template <typename T> void operator()(const And<T> &a) {}
+  template <typename T> void operator()(const Not<T> &a) {}
 };
+
 } // namespace language

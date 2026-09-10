@@ -71,7 +71,8 @@ using Comment = std::tuple<
 
 using Spacing   = std::vector<std::variant<Space, Comment>>;
 
-using LEFTARROW = std::tuple<r<"<-">, Spacing>;
+// TODO (owen): I am trying to make these structs because I would like the ability for types to exist rather than just being aliases. That way they're easier to work with and error messages are less verbose. 
+struct LEFTARROW : std::tuple<r<"<-">, Spacing>{};
 using SLASH     = std::tuple<r<"/">, Spacing>;
 using AND       = std::tuple<r<"&">, Spacing>;
 using NOT       = std::tuple<r<"!">, Spacing>;

@@ -18,7 +18,12 @@ using Integer = r<"[0-9]+">;
 // Number <- (Float / Integer) _
 using Number = std::tuple<std::variant<Float, Integer>, Spacing>;
 
-using Plus = std::tuple<r<"\\+">, Spacing>;
+// NOTE (owen): Trying to make these a struct themselves without def makes it so
+// the return type is still std::tuple but later variants expect Plus itself.
+// This needs to be dealt with somehow -- we need to handle structs implicitly.
+// The problem with Def is that Grammar is the GrammarT itself (tuple), but I
+// want it to be the struct itself.
+struct Plus : std::tuple<r<"\\+">, Spacing> {};
 using Minus = std::tuple<r<"\\-">, Spacing>;
 using Star = std::tuple<r<"\\*">, Spacing>;
 using Slash = std::tuple<r<"\\/">, Spacing>;

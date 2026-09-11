@@ -44,28 +44,47 @@ struct EndOfFile {
 Return Types
 */
 
+namespace detail {
+
+template <typename T, template <typename...> class Template>
+concept DerivedFromTemplate = requires(const T &t) {
+  []<typename... Args>(const Template<Args...> &) {}(t);
+};
+
 template <typename T>
-struct get_tuple_base;
+concept DerivedFromTuple = DerivedFromTemplate<T, std::tuple>;
 
-// Matches std::tuple directly or via base-class conversion
-template <typename... Args>
-struct get_tuple_base<std::tuple<Args...>> {
-  using type = std::tuple<Args...>;
-};
+template <typename T>
+concept DerivedFromVariant = DerivedFromTemplate<T, std::variant>;
 
-template <typename Derived>
-  requires requires(Derived& d) {
-    []<typename... Args>(std::tuple<Args...>&){}(d);
-  }
-struct get_tuple_base<Derived> {
- private:
-  template <typename... Args>
-  static std::tuple<Args...> extract(const std::tuple<Args...>*);
+template <typename T>
+concept DerivedFromVector = DerivedFromTemplate<T, std::vector>;
 
- public:
-  using type = decltype(extract(std::declval<Derived*>()));
-};
+template <typename T>
+concept DerivedFromWrapper = DerivedFromTemplate<T, boost::recursive_wrapper>;
 
+template <template <typename...> class Template, typename... Args>
+Template<Args...> extract_template_base(const Template<Args...> &);
+
+template <typename T, template <typename...> class Template>
+using template_base_t =
+    decltype(extract_template_base<Template>(std::declval<T>()));
+
+template <typename T> using tuple_base_t = template_base_t<T, std::tuple>;
+
+template <typename T> using variant_base_t = template_base_t<T, std::variant>;
+
+template <typename T> using vector_base_t = template_base_t<T, std::vector>;
+
+template <typename T> using wrapper_base_t = template_base_t<T, boost::recursive_wrapper>;
+
+template <template <FixedString> class Template, FixedString Str>
+Template<Str> extract_regex_base(const Template<Str> &);
+
+template <typename T, template<FixedString> class Template>
+using regex_base_t = decltype(extract_regex_base<Template>(std::declval<T>()));
+
+} // namespace detail
 
 /*
 Recursive Definition
@@ -83,12 +102,30 @@ Matchers
 template <typename Rule> struct Matcher;
 
 template <FixedString Pattern> struct Matcher<Regex<Pattern>> {
-  using ReturnType = Regex<Pattern>;
+  using RegexType = Regex<Pattern>;
 
-  static std::optional<Result<ReturnType>> Match(Context ctx) {
+  static std::optional<Result<RegexType>> Match(Context ctx) {
     static const std::regex re{"^(" + std::string(Pattern.value) + ")",
                                std::regex::optimize};
-    return MatchRegex<ReturnType>(re, ctx);
+    return MatchRegex<RegexType>(re, ctx);
+  }
+};
+
+template <typename T>
+  requires(!requires { typename Matcher<T>::RegexType; }) &&
+          requires { typename detail::regex_base_t<T, Regex>; }
+struct Matcher<T> {
+  using BaseRegex = typename detail::regex_base_t<T, Regex>;
+  using RegexType = typename Matcher<BaseRegex>::RegexType;
+
+  static std::optional<Result<T>> Match(Context ctx) {
+    const auto match = Matcher<BaseRegex>::Match(ctx);
+    if (!match)
+      return std::nullopt;
+
+    T struct_val{std::move(match->value)};
+
+    return Result{.ctx = match->ctx, .value = std::move(struct_val)};
   }
 };
 
@@ -133,6 +170,25 @@ struct Matcher<std::variant<Head, Tail...>> {
   }
 };
 
+// TODO (owen): Figure out if we need a derived specialization for the singular
+// Head case
+template <typename T>
+  requires(!requires { typename Matcher<T>::VariantType; }) &&
+          requires { typename detail::variant_base_t<T>; }
+struct Matcher<T> {
+  using BaseVariant = typename detail::variant_base_t<T>;
+  using VariantType = typename Matcher<BaseVariant>::VariantType;
+
+  static std::optional<Result<T>> Match(Context ctx) {
+    const auto match = Matcher<BaseVariant>::Match(ctx);
+    if (!match)
+      return std::nullopt;
+
+    T struct_val{std::move(match->value)};
+
+    return Result{.ctx = match->ctx, .value = std::move(struct_val)};
+  }
+};
 
 template <typename Head, typename... Tail>
 struct Matcher<std::tuple<Head, Tail...>> {
@@ -160,24 +216,21 @@ struct Matcher<std::tuple<Head, Tail...>> {
   }
 };
 
-
 template <typename T>
-  requires (!requires { typename Matcher<T>::TupleType; }) // avoids re-matching std::tuple itself
-        && requires { typename get_tuple_base<T>::type; }
+  requires(!requires { typename Matcher<T>::TupleType; }) &&
+          requires { typename detail::tuple_base_t<T>; }
 struct Matcher<T> {
-  using BaseTuple = typename get_tuple_base<T>::type;
+  using BaseTuple = typename detail::tuple_base_t<T>;
   using TupleType = typename Matcher<BaseTuple>::TupleType;
 
   static std::optional<Result<T>> Match(Context ctx) {
     const auto match = Matcher<BaseTuple>::Match(ctx);
-    if(!match) return std::nullopt;
+    if (!match)
+      return std::nullopt;
 
     T struct_val{std::move(match->value)};
 
-    return Result{
-      .ctx = match->ctx,
-      .value = std::move(struct_val)
-    };
+    return Result{.ctx = match->ctx, .value = std::move(struct_val)};
   }
 };
 
@@ -209,6 +262,24 @@ template <typename Rule> struct Matcher<std::vector<Rule>> {
     }
 
     return Result<VecType>{.ctx = current, .value = std::move(children)};
+  }
+};
+
+template <typename T>
+  requires(!requires { typename Matcher<T>::VecType; }) &&
+          requires { typename detail::vector_base_t<T>; }
+struct Matcher<T> {
+  using BaseVec = typename detail::vector_base_t<T>;
+  using VecType = typename Matcher<BaseVec>::VecType;
+
+  static std::optional<Result<T>> Match(Context ctx) {
+    const auto match = Matcher<BaseVec>::Match(ctx);
+    if (!match)
+      return std::nullopt;
+
+    T struct_val{std::move(match->value)};
+
+    return Result{.ctx = match->ctx, .value = std::move(struct_val)};
   }
 };
 

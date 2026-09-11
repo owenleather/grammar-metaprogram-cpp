@@ -11,7 +11,7 @@ cc_library(
 cc_library(
     name = "bindings",
     hdrs = ["bindings.h"],
-    deps = [":syntax",]
+    deps = [":syntax", "//source:node_printer",]
 )
 cc_binary(
     name = "main",

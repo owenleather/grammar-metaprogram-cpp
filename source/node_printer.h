@@ -80,6 +80,11 @@ struct NodePrinter {
 };
 
 namespace detail {
+
+inline std::string strip_namespaces(std::string_view name) {
+    static const std::regex ns_regex(R"(\b[a-zA-Z_][a-zA-Z0-9_]*::)");
+    return std::regex_replace(std::string(name), ns_regex, "");
+}
   
 template <typename T> std::string get_pretty_type() {
   const char *mangled_name = typeid(T).name();
@@ -102,6 +107,10 @@ template <typename T> std::string get_pretty_type_name() {
   return (status == 0) ? res.get() : typeid(T).name();
 }
 
+template <typename T> std::string get_pretty_type_name_no_namespace() {
+  return strip_namespaces(get_pretty_type_name<T>());
+}
+
 }
 
 struct GenericNodePrinter {
@@ -114,7 +123,7 @@ struct GenericNodePrinter {
     using TupleBase = detail::tuple_base_t<DecayedType>;
 
     print_indent();
-    std::cout << detail::get_pretty_type_name<DecayedType>();
+    std::cout << detail::get_pretty_type_name_no_namespace<DecayedType>();
     std::cout << ", Tuple:" << std::endl;
     std::apply(
         [this](const auto &...element) {
@@ -128,7 +137,7 @@ struct GenericNodePrinter {
     using VectorBase = detail::vector_base_t<DecayedType>;
 
     print_indent();
-    std::cout << detail::get_pretty_type_name<DecayedType>();
+    std::cout << detail::get_pretty_type_name_no_namespace<DecayedType>();
     std::cout << ", Vector:" << std::endl;
     for (const auto &e : static_cast<const VectorBase &>(t)) {
       GenericNodePrinter{indent + 1}(e);
@@ -140,7 +149,7 @@ struct GenericNodePrinter {
     using VariantBase = detail::variant_base_t<DecayedType>;
 
     print_indent();
-    std::cout << detail::get_pretty_type_name<DecayedType>();
+    std::cout << detail::get_pretty_type_name_no_namespace<DecayedType>();
     std::cout << ", Variant:" << std::endl;
     std::visit(GenericNodePrinter{indent + 1}, static_cast<const VariantBase &>(t));
   }
@@ -155,7 +164,7 @@ struct GenericNodePrinter {
   void operator()(const auto &t) {
     using DecayedType = std::decay_t<decltype(t)>;
     print_indent();
-    std::cout << detail::get_pretty_type_name<DecayedType>() << std::endl;
+    std::cout << detail::get_pretty_type_name_no_namespace<DecayedType>() << std::endl;
   }
 };
 

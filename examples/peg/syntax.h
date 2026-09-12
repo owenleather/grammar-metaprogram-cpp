@@ -71,9 +71,8 @@ struct Comment : std::tuple<
 
 struct Spacing : std::vector<std::variant<Space, Comment>>{};
 
-struct BaseKeyword {};
 template <FixedString Str> 
-struct Keyword : std::tuple<r<Str>, Spacing>, BaseKeyword{};
+struct Keyword : std::tuple<r<Str>, Spacing>{};
 
 struct LEFTARROW : Keyword<"<-">{};
 struct SLASH     : Keyword<"/">{};

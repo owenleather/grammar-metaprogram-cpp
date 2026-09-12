@@ -1,5 +1,5 @@
 #include "examples/peg/syntax.h"
-#include "examples/peg/node_printer.h"
+#include "examples/peg/bindings.h"
 
 const std::string peg_grammar = R"(
 # Hierarchical syntax
@@ -57,5 +57,5 @@ int main() {
     throw std::runtime_error("Parse failed!\n");
   }
 
-  language::GenericNodePrinter{}(result->value);
+  std::cout << language::Bindings{}(result->value) << std::endl;;
 }

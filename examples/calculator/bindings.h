@@ -31,7 +31,8 @@ struct Bindings {
   }
 
   double operator()(const ExpressionOrTerm auto &node) {
-    const auto &[left, right_vec] = static_cast<detail::tuple_base_t<decltype(node)>>(node);
+    const auto &[left, right_vec] =
+        static_cast<detail::tuple_base_t<decltype(node)>>(node);
     double res = Bindings{}(left);
     for (const auto &[op, right] : right_vec) {
       const double val = Bindings{}(right);
@@ -50,16 +51,17 @@ struct Bindings {
     return res;
   }
 
-  double operator()(const ExpFactor &e) { return Bindings{}(std::get<1>(e));
-  }
+  double operator()(const ExpFactor &e) { return Bindings{}(std::get<1>(e)); }
 
   double operator()(const Primary &p) { return std::visit(Bindings{}, p); }
 
-  double operator()(const std::variant_alternative_t<0, detail::variant_base_t<Primary>> &t) {
+  double operator()(
+      const std::variant_alternative_t<0, detail::variant_base_t<Primary>> &t) {
     return Bindings{}(std::get<1>(t));
   }
 
-  double operator()(const std::variant_alternative_t<1, detail::variant_base_t<Primary>> &n) {
+  double operator()(
+      const std::variant_alternative_t<1, detail::variant_base_t<Primary>> &n) {
     return std::visit(NumberVisitor{}, std::get<0>(n));
   }
 
@@ -68,4 +70,73 @@ struct Bindings {
     return Bindings{}(f.get().value);
   }
 };
-}
+
+// TODO (owen): Dont make variants indent, maybe auto unfold rather than
+// printing then unfolding tuples and vectors, and add optional support
+struct PrintBindings {
+  size_t indent;
+
+  void print_indent() const { std::cout << std::string(indent * 2, ' '); }
+
+  void operator()(const Number &num) {
+    print_indent();
+    std::cout << "Number: " << std::visit(NumberVisitor{}, std::get<0>(num))
+              << std::endl;
+  }
+
+  void operator()(const Plus &plus) {
+    print_indent();
+    std::cout << "Plus" << std::endl;
+  }
+
+  void operator()(const detail::DerivedFromTuple auto &t) {
+    using DecayedType = std::decay_t<decltype(t)>;
+    using TupleBase = detail::tuple_base_t<DecayedType>;
+
+    print_indent();
+    std::cout << detail::get_pretty_type_name_no_namespace<DecayedType>();
+    std::cout << ", Tuple:" << std::endl;
+    std::apply(
+        [this](const auto &...element) {
+          (PrintBindings{indent + 1}(element), ...);
+        },
+        static_cast<const TupleBase &>(t));
+  }
+
+  void operator()(const detail::DerivedFromVector auto &t) {
+    using DecayedType = std::decay_t<decltype(t)>;
+    using VectorBase = detail::vector_base_t<DecayedType>;
+
+    print_indent();
+    std::cout << detail::get_pretty_type_name_no_namespace<DecayedType>();
+    std::cout << ", Vector:" << std::endl;
+    for (const auto &e : static_cast<const VectorBase &>(t)) {
+      PrintBindings{indent + 1}(e);
+    }
+  }
+
+  void operator()(const detail::DerivedFromVariant auto &t) {
+    using DecayedType = std::decay_t<decltype(t)>;
+    using VariantBase = detail::variant_base_t<DecayedType>;
+
+    print_indent();
+    std::cout << detail::get_pretty_type_name_no_namespace<DecayedType>();
+    std::cout << ", Variant:" << std::endl;
+    std::visit(PrintBindings{indent + 1}, static_cast<const VariantBase &>(t));
+  }
+
+  void operator()(const detail::DerivedFromWrapper auto &t) {
+    using DecayedType = std::decay_t<decltype(t)>;
+    using WrapperBase = detail::wrapper_base_t<DecayedType>;
+
+    PrintBindings{indent}(static_cast<const WrapperBase &>(t).get().value);
+  }
+
+  void operator()(const auto &t) {
+    using DecayedType = std::decay_t<decltype(t)>;
+    print_indent();
+    std::cout << detail::get_pretty_type_name_no_namespace<DecayedType>()
+              << std::endl;
+  }
+};
+} // namespace example::calculator::bindings

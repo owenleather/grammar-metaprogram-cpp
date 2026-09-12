@@ -20,7 +20,7 @@ int main() {
     throw std::runtime_error("Parse failed!\n");
   }
   
-  GenericNodePrinter{}(result->value);
+  PrintBindings{}(result->value);
   
   const auto parsed_value = Bindings{}(result->value);
   std::cout << "Parsed expression value: " << parsed_value << std::endl;

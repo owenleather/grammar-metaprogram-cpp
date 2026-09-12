@@ -16,8 +16,15 @@ cc_library(
     ":syntax",]
 )
 
+cc_library(
+    name = "bindings",
+    hdrs = ["bindings.h"],
+    deps = ["//source:grammar",
+    ":syntax",]
+)
+
 cc_binary(
     name = "main",
     srcs = ["main.cpp"],
-    deps = [":syntax", ":node_printer",]
+    deps = [":syntax", ":bindings",]
 )

@@ -11,16 +11,13 @@
 #include <regex>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
 namespace language {
-
-/*
-Rule Tags
-*/
 
 template <FixedString Pattern> struct Regex {
   static constexpr auto pattern = Pattern;
@@ -36,12 +33,8 @@ template <typename Rule> struct And {
   using IsAnd = void;
 };
 
-struct EndOfFile {
-  using IsEOF = void;
-};
-
 /*
-Return Types
+Return Types & Type Deduction Traits
 */
 
 namespace detail {
@@ -71,12 +64,12 @@ using template_base_t =
     decltype(extract_template_base<Template>(std::declval<T>()));
 
 template <typename T> using tuple_base_t = template_base_t<T, std::tuple>;
-
 template <typename T> using variant_base_t = template_base_t<T, std::variant>;
-
 template <typename T> using vector_base_t = template_base_t<T, std::vector>;
-
 template <typename T> using wrapper_base_t = template_base_t<T, boost::recursive_wrapper>;
+template <typename T> using not_base_t = template_base_t<T, Not>;
+template <typename T> using and_base_t = template_base_t<T, And>;
+template <typename T> using optional_base_t = template_base_t<T, std::optional>;
 
 template <template <FixedString> class Template, FixedString Str>
 Template<Str> extract_regex_base(const Template<Str> &);
@@ -85,6 +78,7 @@ template <typename T, template<FixedString> class Template>
 using regex_base_t = decltype(extract_regex_base<Template>(std::declval<T>()));
 
 } // namespace detail
+
 
 /*
 Recursive Definition
@@ -113,140 +107,133 @@ template <FixedString Pattern> struct Matcher<Regex<Pattern>> {
 
 template <typename T>
   requires(!requires { typename Matcher<T>::RegexType; }) &&
-          requires { typename detail::regex_base_t<T, Regex>; }
+           requires { typename detail::regex_base_t<T, Regex>; }
 struct Matcher<T> {
   using BaseRegex = typename detail::regex_base_t<T, Regex>;
   using RegexType = typename Matcher<BaseRegex>::RegexType;
 
   static std::optional<Result<T>> Match(Context ctx) {
     const auto match = Matcher<BaseRegex>::Match(ctx);
-    if (!match)
-      return std::nullopt;
+    if (!match) return std::nullopt;
 
-    T struct_val{std::move(match->value)};
-
-    return Result{.ctx = match->ctx, .value = std::move(struct_val)};
+    return Result{.ctx = match->ctx, .value = T{std::move(match->value)}};
   }
 };
 
-template <typename Head> struct Matcher<std::variant<Head>> {
-  using VariantType = std::variant<Head>;
+template <typename... Types>
+struct Matcher<std::variant<Types...>> {
+  using VariantType = std::variant<Types...>;
 
   static std::optional<Result<VariantType>> Match(Context ctx) {
-    if (auto res = Matcher<Head>::Match(ctx)) {
-      return Result<VariantType>{.ctx = res->ctx,
-                                 .value = VariantType(std::move(res->value))};
-    }
-    return std::nullopt;
-  }
-};
+    std::optional<Result<VariantType>> result;
 
-template <typename Head, typename... Tail>
-struct Matcher<std::variant<Head, Tail...>> {
-  using VariantType = std::variant<Head, Tail...>;
-
-  static std::optional<Result<VariantType>> Match(Context ctx) {
-    auto head = Matcher<Head>::Match(ctx);
-    if (head) {
-      return Result<VariantType>{.ctx = head->ctx,
-                                 .value = VariantType(std::move(head->value))};
-    }
-
-    if constexpr (sizeof...(Tail) > 0) {
-      auto tail = Matcher<std::variant<Tail...>>::Match(ctx);
-      if (tail) {
-        VariantType parent_variant = std::visit(
-            [](auto &&val) -> VariantType {
-              return VariantType(std::forward<decltype(val)>(val));
-            },
-            tail->value);
-
-        return Result<VariantType>{.ctx = tail->ctx,
-                                   .value = std::move(parent_variant)};
+    bool matched = ([&]() -> bool {
+      if (auto res = Matcher<Types>::Match(ctx)) {
+        result = Result<VariantType>{.ctx = res->ctx,
+                                     .value = VariantType(std::move(res->value))};
+        return true;
       }
-    }
+      return false;
+    }() || ...);
 
+    if (matched) return result;
     return std::nullopt;
   }
 };
 
-// TODO (owen): Figure out if we need a derived specialization for the singular
-// Head case
+// Derived Variant Wrapper
 template <typename T>
   requires(!requires { typename Matcher<T>::VariantType; }) &&
-          requires { typename detail::variant_base_t<T>; }
+           requires { typename detail::variant_base_t<T>; }
 struct Matcher<T> {
   using BaseVariant = typename detail::variant_base_t<T>;
   using VariantType = typename Matcher<BaseVariant>::VariantType;
 
   static std::optional<Result<T>> Match(Context ctx) {
     const auto match = Matcher<BaseVariant>::Match(ctx);
-    if (!match)
-      return std::nullopt;
+    if (!match) return std::nullopt;
 
-    T struct_val{std::move(match->value)};
-
-    return Result{.ctx = match->ctx, .value = std::move(struct_val)};
+    return Result{.ctx = match->ctx, .value = T{std::move(match->value)}};
   }
 };
 
-template <typename Head, typename... Tail>
-struct Matcher<std::tuple<Head, Tail...>> {
-  using TupleType = std::tuple<Head, Tail...>;
+template <typename... Elements>
+struct Matcher<std::tuple<Elements...>> {
+  using TupleType = std::tuple<Elements...>;
 
   static std::optional<Result<TupleType>> Match(Context ctx) {
-    auto head_res = Matcher<Head>::Match(ctx);
-    if (!head_res)
+    Context current = ctx;
+    std::tuple<std::optional<Elements>...> temp_tuple;
+
+    auto match_elements = [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
+      bool success = true;
+      ((success = success && [&]() -> bool {
+        using Element = std::tuple_element_t<Is, TupleType>;
+        if (auto res = Matcher<Element>::Match(current)) {
+          current = res->ctx;
+          std::get<Is>(temp_tuple).emplace(std::move(res->value));
+          return true;
+        }
+        return false;
+      }()), ...);
+      return success;
+    };
+
+    if (!match_elements(std::make_index_sequence<sizeof...(Elements)>{})) {
       return std::nullopt;
-
-    if constexpr (sizeof...(Tail) == 0) {
-      return Result<TupleType>{.ctx = head_res->ctx,
-                               .value =
-                                   std::make_tuple(std::move(head_res->value))};
-    } else {
-      auto tail_res = Matcher<std::tuple<Tail...>>::Match(head_res->ctx);
-      if (!tail_res)
-        return std::nullopt;
-
-      return Result<TupleType>{
-          .ctx = tail_res->ctx,
-          .value = std::tuple_cat(std::make_tuple(std::move(head_res->value)),
-                                  std::move(tail_res->value))};
     }
+
+    TupleType final_tuple = std::apply(
+        [](auto&&... args) { return std::make_tuple(std::move(*args)...); },
+        temp_tuple);
+
+    return Result<TupleType>{.ctx = current, .value = std::move(final_tuple)};
   }
 };
 
+// Derived Tuple Wrapper
 template <typename T>
   requires(!requires { typename Matcher<T>::TupleType; }) &&
-          requires { typename detail::tuple_base_t<T>; }
+           requires { typename detail::tuple_base_t<T>; }
 struct Matcher<T> {
   using BaseTuple = typename detail::tuple_base_t<T>;
   using TupleType = typename Matcher<BaseTuple>::TupleType;
 
   static std::optional<Result<T>> Match(Context ctx) {
     const auto match = Matcher<BaseTuple>::Match(ctx);
-    if (!match)
-      return std::nullopt;
+    if (!match) return std::nullopt;
 
-    T struct_val{std::move(match->value)};
-
-    return Result{.ctx = match->ctx, .value = std::move(struct_val)};
+    return Result{.ctx = match->ctx, .value = T{std::move(match->value)}};
   }
 };
 
+// 4. Boost Recursive Wrapper
 template <typename Target> struct Matcher<boost::recursive_wrapper<Target>> {
   using ReturnType = boost::recursive_wrapper<Target>;
 
   static std::optional<Result<ReturnType>> Match(Context ctx) {
     auto res = Matcher<typename Target::Grammar>::Match(ctx);
-    if (!res)
-      return std::nullopt;
+    if (!res) return std::nullopt;
 
     return Result<ReturnType>{
         .ctx = res->ctx, .value = ReturnType(Target{std::move(res->value)})};
   }
 };
 
+// 5. Def<T> Matcher
+template <typename GrammarT> struct Matcher<Def<GrammarT>> {
+  using ReturnType = Def<GrammarT>;
+
+  static std::optional<Result<ReturnType>> Match(Context ctx) {
+    auto res = Matcher<GrammarT>::Match(ctx);
+    if (!res) return std::nullopt;
+
+    return Result<ReturnType>{.ctx = res->ctx,
+                              .value = Def<GrammarT>{std::move(res->value)}};
+  }
+};
+
+// 6. Vector Matcher
 template <typename Rule> struct Matcher<std::vector<Rule>> {
   using VecType = std::vector<Rule>;
 
@@ -255,8 +242,7 @@ template <typename Rule> struct Matcher<std::vector<Rule>> {
     VecType children;
 
     while (auto res = Matcher<Rule>::Match(current)) {
-      if (res->ctx.input.size() == current.input.size())
-        break;
+      if (res->ctx.input.size() == current.input.size()) break;
       children.push_back(std::move(res->value));
       current = res->ctx;
     }
@@ -265,24 +251,23 @@ template <typename Rule> struct Matcher<std::vector<Rule>> {
   }
 };
 
+// Derived Vector Wrapper
 template <typename T>
   requires(!requires { typename Matcher<T>::VecType; }) &&
-          requires { typename detail::vector_base_t<T>; }
+           requires { typename detail::vector_base_t<T>; }
 struct Matcher<T> {
   using BaseVec = typename detail::vector_base_t<T>;
   using VecType = typename Matcher<BaseVec>::VecType;
 
   static std::optional<Result<T>> Match(Context ctx) {
     const auto match = Matcher<BaseVec>::Match(ctx);
-    if (!match)
-      return std::nullopt;
+    if (!match) return std::nullopt;
 
-    T struct_val{std::move(match->value)};
-
-    return Result{.ctx = match->ctx, .value = std::move(struct_val)};
+    return Result{.ctx = match->ctx, .value = T{std::move(match->value)}};
   }
 };
 
+// 7. Optional, Not, And
 template <typename Rule> struct Matcher<std::optional<Rule>> {
   using OptType = std::optional<Rule>;
 
@@ -291,26 +276,54 @@ template <typename Rule> struct Matcher<std::optional<Rule>> {
       return Result<OptType>{.ctx = res->ctx,
                              .value = OptType(std::move(res->value))};
     }
-
     return Result<OptType>{.ctx = ctx, .value = std::nullopt};
   }
 };
 
-template <typename Rule> struct Matcher<Not<Rule>> {
-  using ReturnType = Not<Rule>;
+template <typename T>
+  requires(!requires { typename Matcher<T>::OptType; }) &&
+           requires { typename detail::optional_base_t<T>; }
+struct Matcher<T> {
+  using BaseOptional = typename detail::not_base_t<T>;
+  using OptType = typename Matcher<BaseOptional>::OptType;
 
-  static std::optional<Result<ReturnType>> Match(Context ctx) {
-    if (auto res = Matcher<Rule>::Match(ctx)) {
-      return std::nullopt;
-    }
+  static std::optional<Result<T>> Match(Context ctx) {
+    const auto match = Matcher<BaseOptional>::Match(ctx);
+    if (!match) return std::nullopt;
+
+    return Result{.ctx = match->ctx, .value = T{std::move(match->value)}};
+  }
+};
+
+template <typename Rule> struct Matcher<Not<Rule>> {
+  using NotType = Not<Rule>;
+
+  static std::optional<Result<NotType>> Match(Context ctx) {
+    if (auto res = Matcher<Rule>::Match(ctx)) return std::nullopt;
     return Result{.ctx = ctx, .value = Not<Rule>{}};
   }
 };
 
-template <typename Rule> struct Matcher<And<Rule>> {
-  using ReturnType = And<Rule>;
 
-  static std::optional<Result<ReturnType>> Match(Context ctx) {
+template <typename T>
+  requires(!requires { typename Matcher<T>::NotType; }) &&
+           requires { typename detail::not_base_t<T>; }
+struct Matcher<T> {
+  using BaseNot = typename detail::not_base_t<T>;
+  using NotType = typename Matcher<BaseNot>::NotType;
+
+  static std::optional<Result<T>> Match(Context ctx) {
+    const auto match = Matcher<BaseNot>::Match(ctx);
+    if (!match) return std::nullopt;
+
+    return Result{.ctx = match->ctx, .value = T{std::move(match->value)}};
+  }
+};
+
+template <typename Rule> struct Matcher<And<Rule>> {
+  using AndType = And<Rule>;
+
+  static std::optional<Result<AndType>> Match(Context ctx) {
     if (auto res = Matcher<Rule>::Match(ctx)) {
       return Result{.ctx = ctx, .value = And<Rule>{}};
     }
@@ -318,13 +331,20 @@ template <typename Rule> struct Matcher<And<Rule>> {
   }
 };
 
-template <> struct Matcher<EndOfFile> {
-  static std::optional<Result<EndOfFile>> Match(Context ctx) {
-    if (ctx.input.empty()) {
-      return Result<EndOfFile>{.ctx = ctx, .value = EndOfFile{}};
-    }
-    return std::nullopt;
+template <typename T>
+  requires(!requires { typename Matcher<T>::AndType; }) &&
+           requires { typename detail::and_base_t<T>; }
+struct Matcher<T> {
+  using BaseAnd = typename detail::and_base_t<T>;
+  using AndType = typename Matcher<BaseAnd>::AndType;
+
+  static std::optional<Result<T>> Match(Context ctx) {
+    const auto match = Matcher<BaseAnd>::Match(ctx);
+    if (!match) return std::nullopt;
+
+    return Result{.ctx = match->ctx, .value = T{std::move(match->value)}};
   }
 };
+
 
 } // namespace language

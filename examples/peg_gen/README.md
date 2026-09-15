@@ -13,11 +13,11 @@ The metaprogram and resulting syntax tree are overly verbose since it is a gener
 This example isn't meant to be useful, it is just to demonstrate the library's functionality.
 
 ## Usage
-1. `bazel run //examples/peg:generate_zig_metaprogram`
+1. `bazel run //examples/peg_gen:generate_zig_metaprogram`
 
 This parses `data/zig.peg` and generates `generated/zig_metaprogram.h`.
 
-2. `bazel run //examples/peg:zig_parser -- /path/to/hello_world.zig`
+2. `bazel run //examples/peg_gen:zig_parser -- /path/to/hello_world.zig`
 
 This reads the zig file and outputs the parsed syntax tree. The parsed syntax tree will likely not be human readable since it is extremely verbose with C++ types. Further work would be needed simplify the syntax and beutifuy the tree printing.
 

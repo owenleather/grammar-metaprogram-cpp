@@ -3,14 +3,27 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+cc_binary(
+    name = "generate_zig_metaprogram",
+    srcs = ["generate_zig_metaprogram.cpp"],
+    data = ["data/zig.peg"],
+    deps = [
+        "//examples/peg_gen/codegen:peg_metaprogram", 
+        "//examples/peg_gen/codegen:peg_codegen",
+        "@bazel_tools//tools/cpp/runfiles",
+    ],
+)
+
 cc_library(
-    name = "syntax",
-    hdrs = ["syntax.h"],
-    deps = ["//source:grammar",]
+    name = "zig_metaprogram",
+    hdrs = ["generated/zig_metaprogram.h"],
+    deps = [
+        "//source:grammar",
+    ]
 )
 
 cc_binary(
-    name = "main",
-    srcs = ["main.cpp"],
-    deps = [":syntax", "//source:node_printer"]
+    name = "zig_parser",
+    srcs = ["zig_parser.cpp"],
+    deps = [":zig_metaprogram", "//source:node_printer"],
 )

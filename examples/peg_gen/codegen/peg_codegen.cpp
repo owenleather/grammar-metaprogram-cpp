@@ -1,4 +1,4 @@
-#include "examples/peg/codegen/peg_codegen.h"
+#include "examples/peg_gen/codegen/peg_codegen.h"
 #include <iomanip>
 #include <iostream>
 #include <sstream>

@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "examples/peg/generated/zig_metaprogram.h"
+#include "examples/peg_gen/generated/zig_metaprogram.h"
 #include "source/node_printer.h"
 
 int main(int argc, char* argv[]) {

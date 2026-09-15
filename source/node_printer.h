@@ -24,7 +24,6 @@ template <typename T> std::string get_pretty_type() {
   const char *mangled_name = typeid(T).name();
 #ifndef _MSC_VER
   int status = 0;
-  // abi::__cxa_demangle allocates memory that must be freed
   std::unique_ptr<char, void (*)(void *)> demangled(
       abi::__cxa_demangle(mangled_name, nullptr, nullptr, &status), std::free);
   return (status == 0) ? demangled.get() : mangled_name;

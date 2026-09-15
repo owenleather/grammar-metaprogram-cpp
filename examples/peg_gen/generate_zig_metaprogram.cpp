@@ -4,8 +4,8 @@
 #include <stdexcept>
 #include <string>
 
-#include "examples/peg/codegen/peg_codegen.h"
-#include "examples/peg/codegen/peg_metaprogram.h"
+#include "examples/peg_gen/codegen/peg_codegen.h"
+#include "examples/peg_gen/codegen/peg_metaprogram.h"
 
 #include "tools/cpp/runfiles/runfiles.h"
 
@@ -36,7 +36,7 @@ std::string GetInputFilePath(char *argv[]) {
     throw std::runtime_error("Failed to load runfiles: " + error);
   }
 
-  return runfiles->Rlocation("_main/examples/peg/data/zig.peg");
+  return runfiles->Rlocation("_main/examples/peg_gen/data/zig.peg");
 }
 
 std::string ReadGrammarFile(char *argv[]) {
@@ -58,7 +58,7 @@ std::string GetOutputPath() {
     if (!workspace_dir) {
       throw std::runtime_error("Expected BUILD_WORKSPACE_DIRECTORY environment variable to be set");
     }
-    return std::string(workspace_dir) + "/examples/peg/generated/zig_metaprogram.h";
+    return std::string(workspace_dir) + "/examples/peg_gen/generated/zig_metaprogram.h";
 }
 
 int main(int argc, char *argv[]) {

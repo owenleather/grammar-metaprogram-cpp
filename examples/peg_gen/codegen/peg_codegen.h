@@ -1,6 +1,6 @@
 #pragma once
 
-#include "examples/peg/codegen/peg_metaprogram.h"
+#include "examples/peg_gen/codegen/peg_metaprogram.h"
 #include "source/grammar.h"
 
 namespace codegen {

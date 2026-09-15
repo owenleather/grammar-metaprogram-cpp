@@ -1,4 +1,4 @@
-### Parsing Expression Grammar (PEG) library as a C++ metaprogramming API.
+### Parsing Expression Grammar (PEG) library as a C++ metaprogramming API
 
 ### Benefits of a metaprogramming API for PEG
 Rules define C++ types directly. This makes rule definition, matching, and binding all statically typed. 

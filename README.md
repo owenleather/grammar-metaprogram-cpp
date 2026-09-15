@@ -25,6 +25,10 @@ using MaybeOp = std::optional<Op>;
 Matcher<MaybeOp>::Match({.input = "+"})->value // -> ReturnType is std::optional<std::variant<Plus, Minus>>
 ```
 
+### Examples
+- `examples/calculator` defines a metaprogram for a calculator that interprets math as natural text and outputs a syntax tree. It then creates bindings that parses the syntax tree into the resulting double value of the calculation.
+- `examples/peg_gen` defines a metaprogram that reads PEG files themselves. It then creates a transpiler that generates a metaprogram from PEG source. Finally, it tests this by generating a metaprogram for the [zig](https://ziglang.org/) language specification and parses a hello world zig program.  
+
 TODOs:
 - Avoid passing Context by value everywhere.
 - Add a one or more rule (equivalent of +). Right now vector is zero or more (*)

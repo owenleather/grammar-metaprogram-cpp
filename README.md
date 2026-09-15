@@ -26,6 +26,5 @@ Matcher<MaybeOp>::Match({.input = "+"})->value // -> ReturnType is std::optional
 ```
 
 TODOs:
-- Make bindings pass through unbound types
 - Avoid passing Context by value everywhere.
 - Add a one or more rule (equivalent of +). Right now vector is zero or more (*)

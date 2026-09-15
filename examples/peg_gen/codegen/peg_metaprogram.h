@@ -50,7 +50,7 @@ EndOfFile <- !.
 
 #include "source/grammar.h"
 
-namespace peg {
+namespace peg_metaprogram {
 
 using namespace language;
 
@@ -60,72 +60,79 @@ template <FixedString T> using r = Regex<T>;
 struct ExpressionDef;
 
 // clang-format off
-using EndOfLine = std::variant<r<"\r\n">, r<"\n">, r<"\r">>;
-using Space      = std::variant<r<" ">, r<"\t">, EndOfLine>;
+struct EndOfFile : Not<r<R"(.)">>{};
+struct EndOfLine : std::variant<r<"\r\n">, r<"\n">, r<"\r">>{};
+struct Space     : std::variant<r<" ">, r<"\t">, EndOfLine>{};
 
-using Comment = std::tuple<
+struct Comment : std::tuple<
     r<"#">,
     std::vector<std::tuple<Not<EndOfLine>, r<".">>>,
     EndOfLine
->;
+>{};
 
-using Spacing   = std::vector<std::variant<Space, Comment>>;
+struct Spacing : std::vector<std::variant<Space, Comment>>{};
 
-using LEFTARROW = std::tuple<r<"<-">, Spacing>;
-using SLASH     = std::tuple<r<"/">, Spacing>;
-using AND       = std::tuple<r<"&">, Spacing>;
-using NOT       = std::tuple<r<"!">, Spacing>;
-using QUESTION  = std::tuple<r<"\\?">, Spacing>;
-using STAR      = std::tuple<r<"\\*">, Spacing>;
-using PLUS      = std::tuple<r<"\\+">, Spacing>;
-using OPEN      = std::tuple<r<"\\(">, Spacing>;
-using CLOSE     = std::tuple<r<"\\)">, Spacing>;
-using DOT       = std::tuple<r<"\\.">, Spacing>;
+template <FixedString Str> 
+struct Keyword : std::tuple<r<Str>, Spacing>{};
 
-using IdentStart = r<"[a-zA-Z_]">;
-using IdentCont  = std::variant<IdentStart, r<"[0-9]">>;
-using Identifier = std::tuple<IdentStart, std::vector<IdentCont>, Spacing>;
+struct LEFTARROW : Keyword<"<-">{};
+struct SLASH     : Keyword<"/">{};
+struct AND       : Keyword<"&">{};
+struct NOT       : Keyword<"!">{};
+struct QUESTION  : Keyword<"\\?">{};
+struct STAR      : Keyword<"\\*">{};
+struct PLUS      : Keyword<"\\+">{};
+struct OPEN      : Keyword<"\\(">{};
+struct CLOSE     : Keyword<"\\)">{};
+struct DOT       : Keyword<"\\.">{};
 
-using Char = std::variant<
+struct IdentStart : r<"[a-zA-Z_]">{};
+struct IdentCont  : std::variant<IdentStart, r<"[0-9]">>{};
+struct Identifier : std::tuple<IdentStart, std::vector<IdentCont>, Spacing>{};
+
+// NOTE (owen): Different from Figure 1, the second variant was updated from
+// [0-2] to [0-3] to allow full 8-bit Extended ASCII characters instead of
+// classical 7-bit ASCII characters.
+struct Char : std::variant<
     r<"\\\\([nrt'\"\\[\\]\\\\])">,
-    r<"\\\\([0-2][0-7][0-7])">,
+    r<"\\\\([0-3][0-7][0-7])">,
     r<"\\\\([0-7]{1,2})">, 
     std::tuple<Not<r<"\\\\">>, r<".">>
->;
+>{};
 
-using Range = std::variant<
+struct Range : std::variant<
     std::tuple<Char, r<"-">, Char>,
     Char
->;
+>{};
 
-using Class = std::tuple<
+struct Class : std::tuple<
     r<"\\[">,
     std::vector<std::tuple<Not<r<"\\]">>, Range>>,
     r<"\\]">,
     Spacing
->;
+>{};
 
-using Literal = std::variant<
+struct Literal : std::variant<
     std::tuple<r<"'">, std::vector<std::tuple<Not<r<"'">>, Char>>, r<"'">, Spacing>,
     std::tuple<r<"\"">, std::vector<std::tuple<Not<r<"\"">>, Char>>, r<"\"">, Spacing>
->;
+>{};
 
-using Primary = std::variant<
+struct Primary : std::variant<
     std::tuple<Identifier, Not<LEFTARROW>>,
     std::tuple<OPEN, wrap<ExpressionDef>, CLOSE>,
     Literal,
     Class,
     DOT
->;
+>{};
 
-using Suffix   = std::tuple<Primary, std::optional<std::variant<QUESTION, STAR, PLUS>>>;
-using Prefix   = std::tuple<std::optional<std::variant<AND, NOT>>, Suffix>;
-using Sequence = std::vector<Prefix>;
+struct Suffix   : std::tuple<Primary, std::optional<std::variant<QUESTION, STAR, PLUS>>>{};
+struct Prefix   : std::tuple<std::optional<std::variant<AND, NOT>>, Suffix>{};
+struct Sequence : std::vector<Prefix>{};
 
 struct ExpressionDef : Def<std::tuple<Sequence, std::vector<std::tuple<SLASH, Sequence>>>> {};
 
-using Definition = std::tuple<Identifier, LEFTARROW, wrap<ExpressionDef>>;
-using Grammar    = std::tuple<Spacing, std::vector<Definition>, EndOfFile>;
+struct Definition : std::tuple<Identifier, LEFTARROW, wrap<ExpressionDef>>{};
+struct Grammar   : std::tuple<Spacing, std::vector<Definition>, EndOfFile>{};
 //clang-format on
 
-} // namespace peg
+} // namespace peg_metaprogram

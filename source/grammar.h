@@ -3,24 +3,18 @@
 #include "source/regex_helpers.h"
 #include <algorithm>
 #include <boost/variant/recursive_wrapper.hpp>
-#include <concepts>
 #include <cstddef>
-#include <iostream>
-#include <memory>
 #include <optional>
 #include <regex>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
 namespace language {
-
-/*
-Rule Tags
-*/
 
 template <FixedString Pattern> struct Regex {
   static constexpr auto pattern = Pattern;
@@ -36,72 +30,16 @@ template <typename Rule> struct And {
   using IsAnd = void;
 };
 
-struct EndOfFile {
-  using IsEOF = void;
-};
-
-/*
-Return Types
-*/
-
-template <typename Rule> struct ReturnTypeOf;
-
-// TODO (owen): Remove duplicates in the variant
-template <typename... Rules> struct ReturnTypeOf<std::variant<Rules...>> {
-  using type = std::variant<typename ReturnTypeOf<Rules>::type...>;
-};
-
-template <typename... Rules> struct ReturnTypeOf<std::tuple<Rules...>> {
-  using type = std::tuple<typename ReturnTypeOf<Rules>::type...>;
-};
-
-template <typename TargetRule>
-struct ReturnTypeOf<boost::recursive_wrapper<TargetRule>> {
-  using type = boost::recursive_wrapper<TargetRule>;
-};
-
-template <FixedString Pattern> struct ReturnTypeOf<Regex<Pattern>> {
-  using type = Regex<Pattern>;
-};
-
-template <typename Rule> struct ReturnTypeOf<std::vector<Rule>> {
-  using type = std::vector<typename ReturnTypeOf<Rule>::type>;
-};
-
-template <typename Condition> struct ReturnTypeOf<std::optional<Condition>> {
-  using type = std::optional<typename ReturnTypeOf<Condition>::type>;
-};
-
-template <typename Rule> struct ReturnTypeOf<Not<Rule>> {
-  using type = std::monostate;
-};
-
-template <typename Rule> struct ReturnTypeOf<And<Rule>> {
-  using type = std::monostate;
-};
-
-template <> struct ReturnTypeOf<EndOfFile> {
-  using type = EndOfFile;
-};
-
-/*
-Recursive Definition
-*/
 template <typename GrammarT> struct Def {
   using Grammar = GrammarT;
-  using ReturnType = ReturnTypeOf<Grammar>::type;
-  ReturnType value;
-  Def(ReturnType t) : value(t) {};
+  Grammar value;
+  Def(Grammar t) : value(t) {};
 };
-
-/*
-Matchers
-*/
 
 template <typename Rule> struct Matcher;
 
 template <FixedString Pattern> struct Matcher<Regex<Pattern>> {
-  using ReturnType = typename ReturnTypeOf<Regex<Pattern>>::type;
+  using ReturnType = Regex<Pattern>;
 
   static std::optional<Result<ReturnType>> Match(Context ctx) {
     static const std::regex re{"^(" + std::string(Pattern.value) + ")",
@@ -110,70 +48,59 @@ template <FixedString Pattern> struct Matcher<Regex<Pattern>> {
   }
 };
 
-template <typename Head> struct Matcher<std::variant<Head>> {
-  using VariantType = typename ReturnTypeOf<std::variant<Head>>::type;
+template <typename... Types> struct Matcher<std::variant<Types...>> {
+  using ReturnType = std::variant<Types...>;
 
-  static std::optional<Result<VariantType>> Match(Context ctx) {
-    if (auto res = Matcher<Head>::Match(ctx)) {
-      return Result<VariantType>{.ctx = res->ctx,
-                                 .value = VariantType(std::move(res->value))};
-    }
-    return std::nullopt;
-  }
-};
+  static std::optional<Result<ReturnType>> Match(Context ctx) {
+    std::optional<Result<ReturnType>> result;
 
-template <typename Head, typename... Tail>
-struct Matcher<std::variant<Head, Tail...>> {
-  using VariantType = typename ReturnTypeOf<std::variant<Head, Tail...>>::type;
-
-  static std::optional<Result<VariantType>> Match(Context ctx) {
-    auto head = Matcher<Head>::Match(ctx);
-    if (head) {
-      return Result<VariantType>{.ctx = head->ctx,
-                                 .value = VariantType(std::move(head->value))};
-    }
-
-    if constexpr (sizeof...(Tail) > 0) {
-      auto tail = Matcher<std::variant<Tail...>>::Match(ctx);
-      if (tail) {
-        VariantType parent_variant = std::visit(
-            [](auto &&val) -> VariantType {
-              return VariantType(std::forward<decltype(val)>(val));
-            },
-            tail->value);
-
-        return Result<VariantType>{.ctx = tail->ctx,
-                                   .value = std::move(parent_variant)};
+    bool matched = ([&]() -> bool {
+      if (auto res = Matcher<Types>::Match(ctx)) {
+        result = Result<ReturnType>{.ctx = res->ctx,
+                                    .value = ReturnType(std::move(res->value))};
+        return true;
       }
-    }
+      return false;
+    }() || ...);
 
+    if (matched)
+      return result;
     return std::nullopt;
   }
 };
 
-template <typename Head, typename... Tail>
-struct Matcher<std::tuple<Head, Tail...>> {
-  using TupleType = typename ReturnTypeOf<std::tuple<Head, Tail...>>::type;
+template <typename... Elements> struct Matcher<std::tuple<Elements...>> {
+  using ReturnType = std::tuple<Elements...>;
 
-  static std::optional<Result<TupleType>> Match(Context ctx) {
-    auto head_res = Matcher<Head>::Match(ctx);
-    if (!head_res)
+  static std::optional<Result<ReturnType>> Match(Context ctx) {
+    Context current = ctx;
+    std::tuple<std::optional<Elements>...> temp_tuple;
+
+    auto match_elements =
+        [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
+      bool success = true;
+      ((success = success && [&]() -> bool {
+         using Element = std::tuple_element_t<Is, ReturnType>;
+         if (auto res = Matcher<Element>::Match(current)) {
+           current = res->ctx;
+           std::get<Is>(temp_tuple).emplace(std::move(res->value));
+           return true;
+         }
+         return false;
+       }()),
+       ...);
+      return success;
+    };
+
+    if (!match_elements(std::make_index_sequence<sizeof...(Elements)>{})) {
       return std::nullopt;
-
-    if constexpr (sizeof...(Tail) == 0) {
-      return Result<TupleType>{.ctx = head_res->ctx,
-                               .value =
-                                   std::make_tuple(std::move(head_res->value))};
-    } else {
-      auto tail_res = Matcher<std::tuple<Tail...>>::Match(head_res->ctx);
-      if (!tail_res)
-        return std::nullopt;
-
-      return Result<TupleType>{
-          .ctx = tail_res->ctx,
-          .value = std::tuple_cat(std::make_tuple(std::move(head_res->value)),
-                                  std::move(tail_res->value))};
     }
+
+    ReturnType final_tuple = std::apply(
+        [](auto &&...args) { return std::make_tuple(std::move(*args)...); },
+        temp_tuple);
+
+    return Result<ReturnType>{.ctx = current, .value = std::move(final_tuple)};
   }
 };
 
@@ -190,12 +117,25 @@ template <typename Target> struct Matcher<boost::recursive_wrapper<Target>> {
   }
 };
 
-template <typename Rule> struct Matcher<std::vector<Rule>> {
-  using VecType = typename ReturnTypeOf<std::vector<Rule>>::type;
+template <typename GrammarT> struct Matcher<Def<GrammarT>> {
+  using ReturnType = Def<GrammarT>;
 
-  static std::optional<Result<VecType>> Match(Context ctx) {
+  static std::optional<Result<ReturnType>> Match(Context ctx) {
+    auto res = Matcher<GrammarT>::Match(ctx);
+    if (!res)
+      return std::nullopt;
+
+    return Result<ReturnType>{.ctx = res->ctx,
+                              .value = Def<GrammarT>{std::move(res->value)}};
+  }
+};
+
+template <typename Rule> struct Matcher<std::vector<Rule>> {
+  using ReturnType = std::vector<Rule>;
+
+  static std::optional<Result<ReturnType>> Match(Context ctx) {
     Context current = ctx;
-    VecType children;
+    ReturnType children;
 
     while (auto res = Matcher<Rule>::Match(current)) {
       if (res->ctx.input.size() == current.input.size())
@@ -204,52 +144,150 @@ template <typename Rule> struct Matcher<std::vector<Rule>> {
       current = res->ctx;
     }
 
-    return Result<VecType>{.ctx = current, .value = std::move(children)};
+    return Result<ReturnType>{.ctx = current, .value = std::move(children)};
   }
 };
 
 template <typename Rule> struct Matcher<std::optional<Rule>> {
-  using OptType = typename ReturnTypeOf<std::optional<Rule>>::type;
+  using ReturnType = std::optional<Rule>;
 
-  static std::optional<Result<OptType>> Match(Context ctx) {
+  static std::optional<Result<ReturnType>> Match(Context ctx) {
     if (auto res = Matcher<Rule>::Match(ctx)) {
-      return Result<OptType>{.ctx = res->ctx,
-                             .value = OptType(std::move(res->value))};
+      return Result<ReturnType>{.ctx = res->ctx,
+                                .value = ReturnType(std::move(res->value))};
     }
-
-    return Result<OptType>{.ctx = ctx, .value = std::nullopt};
+    return Result<ReturnType>{.ctx = ctx, .value = std::nullopt};
   }
 };
 
 template <typename Rule> struct Matcher<Not<Rule>> {
-  using ReturnType = std::monostate;
+  using ReturnType = Not<Rule>;
 
   static std::optional<Result<ReturnType>> Match(Context ctx) {
-    if (auto res = Matcher<Rule>::Match(ctx)) {
+    if (auto res = Matcher<Rule>::Match(ctx))
       return std::nullopt;
-    }
-    return Result{.ctx = ctx, .value = std::monostate()};
+    return Result{.ctx = ctx, .value = Not<Rule>{}};
   }
 };
 
 template <typename Rule> struct Matcher<And<Rule>> {
-  using ReturnType = std::monostate;
+  using ReturnType = And<Rule>;
 
   static std::optional<Result<ReturnType>> Match(Context ctx) {
     if (auto res = Matcher<Rule>::Match(ctx)) {
-      return Result{.ctx = ctx, .value = std::monostate()};
+      return Result{.ctx = ctx, .value = And<Rule>{}};
     }
     return std::nullopt;
   }
 };
 
-template <> struct Matcher<EndOfFile> {
-  static std::optional<Result<EndOfFile>> Match(Context ctx) {
-    if (ctx.input.empty()) {
-      return Result<EndOfFile>{.ctx = ctx, .value = EndOfFile{}};
-    }
-    return std::nullopt;
+namespace detail {
+
+// NOTE (owen): We extract the base type of a derived class by attempting to
+// call a dummy function extract_template_base. If a class is or derives from
+// Template<Args...>, this function can be called successfully, and we can use
+// decltype on the function output to get the base type.
+template <template <typename...> class Template, typename... Args>
+Template<Args...> extract_template_base(const Template<Args...> &);
+
+template <template <auto...> class Template, auto... Args>
+Template<Args...> extract_template_base(const Template<Args...> &);
+
+template <typename T, template <auto...> class Template>
+using base_auto_t =
+    decltype(extract_template_base<Template>(std::declval<T>()));
+
+template <typename T, template <typename...> class Template>
+using base_t = decltype(extract_template_base<Template>(std::declval<T>()));
+
+template <typename T, template <typename...> class Template>
+concept derived_from_type_template = requires { typename base_t<T, Template>; };
+
+template <typename T, template <auto...> class Template>
+concept derived_from_auto_template =
+    requires { typename base_auto_t<T, Template>; };
+
+// clang-format off
+template <typename T> using tuple_base_t = base_t<T, std::tuple>;
+template <typename T> using vector_base_t = base_t<T, std::vector>;
+template <typename T> using variant_base_t = base_t<T, std::variant>;
+template <typename T> using optional_base_t = base_t<T, std::optional>;
+template <typename T> using wrapper_base_t = base_t<T, boost::recursive_wrapper>;
+template <typename T> using regex_base_t = base_auto_t<T, Regex>;
+
+template <typename T> concept derived_from_tuple = derived_from_type_template<T, std::tuple>;
+template <typename T> concept derived_from_vector = derived_from_type_template<T, std::vector>;
+template <typename T> concept derived_from_variant = derived_from_type_template<T, std::variant>;
+template <typename T> concept derived_from_optional = derived_from_type_template<T, std::optional>;
+template <typename T> concept derived_from_wrapper = derived_from_type_template<T, boost::recursive_wrapper>;
+template <typename T> concept derived_from_regex = derived_from_auto_template<T, Regex>;
+// clang-format on
+
+} // namespace detail
+
+template <typename T, typename Base> struct GenericDerivedMatcher {
+  using ReturnType = typename Matcher<Base>::ReturnType;
+
+  static std::optional<Result<T>> Match(Context ctx) {
+    const auto match = Matcher<Base>::Match(ctx);
+    if (!match)
+      return std::nullopt;
+    return Result{.ctx = match->ctx, .value = T{std::move(match->value)}};
   }
 };
+
+template <typename T>
+concept NotAlreadySpecialized = !requires { typename Matcher<T>::ReturnType; };
+
+template <typename T, template <typename...> class Template>
+concept DeriveAdapterEligible =
+    NotAlreadySpecialized<T> &&
+    detail::derived_from_type_template<T, Template> &&
+    !std::is_same_v<T, detail::base_t<T, Template>>;
+
+template <typename T, template <auto...> class Template>
+concept DeriveAutoAdapterEligible =
+    NotAlreadySpecialized<T> &&
+    detail::derived_from_auto_template<T, Template> &&
+    !std::is_same_v<T, detail::base_auto_t<T, Template>>;
+
+template <typename T, template <typename...> class Template>
+  requires DeriveAdapterEligible<T, Template>
+struct DerivedMatcher : GenericDerivedMatcher<T, detail::base_t<T, Template>> {
+};
+
+template <typename T, template <auto...> class Template>
+  requires DeriveAutoAdapterEligible<T, Template>
+struct DerivedRegexMatcher
+    : GenericDerivedMatcher<T, detail::base_auto_t<T, Template>> {};
+
+template <typename T>
+  requires DeriveAdapterEligible<T, std::tuple>
+struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, std::tuple>> {};
+template <typename T>
+  requires DeriveAdapterEligible<T, std::variant>
+struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, std::variant>> {
+};
+template <typename T>
+  requires DeriveAdapterEligible<T, std::vector>
+struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, std::vector>> {};
+template <typename T>
+  requires DeriveAdapterEligible<T, std::optional>
+struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, std::optional>> {
+};
+template <typename T>
+  requires DeriveAdapterEligible<T, boost::recursive_wrapper>
+struct Matcher<T>
+    : GenericDerivedMatcher<T, detail::base_t<T, boost::recursive_wrapper>> {};
+template <typename T>
+  requires DeriveAdapterEligible<T, Not>
+struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, Not>> {};
+template <typename T>
+  requires DeriveAdapterEligible<T, Def>
+struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, Def>> {};
+
+template <typename T>
+  requires DeriveAutoAdapterEligible<T, Regex>
+struct Matcher<T> : GenericDerivedMatcher<T, detail::base_auto_t<T, Regex>> {};
 
 } // namespace language

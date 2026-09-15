@@ -50,7 +50,7 @@ EndOfFile <- !.
 
 #include "source/grammar.h"
 
-namespace peg {
+namespace peg_metaprogram {
 
 using namespace language;
 
@@ -60,6 +60,7 @@ template <FixedString T> using r = Regex<T>;
 struct ExpressionDef;
 
 // clang-format off
+struct EndOfFile : Not<r<R"(.)">>{};
 struct EndOfLine : std::variant<r<"\r\n">, r<"\n">, r<"\r">>{};
 struct Space     : std::variant<r<" ">, r<"\t">, EndOfLine>{};
 
@@ -89,9 +90,12 @@ struct IdentStart : r<"[a-zA-Z_]">{};
 struct IdentCont  : std::variant<IdentStart, r<"[0-9]">>{};
 struct Identifier : std::tuple<IdentStart, std::vector<IdentCont>, Spacing>{};
 
+// NOTE (owen): Different from Figure 1, the second variant was updated from
+// [0-2] to [0-3] to allow full 8-bit Extended ASCII characters instead of
+// classical 7-bit ASCII characters.
 struct Char : std::variant<
     r<"\\\\([nrt'\"\\[\\]\\\\])">,
-    r<"\\\\([0-2][0-7][0-7])">,
+    r<"\\\\([0-3][0-7][0-7])">,
     r<"\\\\([0-7]{1,2})">, 
     std::tuple<Not<r<"\\\\">>, r<".">>
 >{};
@@ -131,4 +135,4 @@ struct Definition : std::tuple<Identifier, LEFTARROW, wrap<ExpressionDef>>{};
 struct Grammar   : std::tuple<Spacing, std::vector<Definition>, EndOfFile>{};
 //clang-format on
 
-} // namespace peg
+} // namespace peg_metaprogram

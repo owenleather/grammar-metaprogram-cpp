@@ -1,6 +1,5 @@
 #include "examples/calculator/syntax.h"
 #include "examples/calculator/bindings.h"
-#include "source/node_printer.h"
 #include <iostream>
 #include <cmath>
 
@@ -29,6 +28,4 @@ int main() {
   } else{
     std::cout << "Parsed value does not equal actual value." << std::endl;
   }
-
-  GenericNodePrinter{}(result->value);
 }

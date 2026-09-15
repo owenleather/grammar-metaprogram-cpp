@@ -1,6 +1,7 @@
 #pragma once
 
 #include "source/grammar.h"
+#include <iostream>
 
 #if defined(__GNUC__) || defined(__clang__)
 #include <cxxabi.h>
@@ -18,7 +19,7 @@ inline std::string strip_namespaces(std::string_view name) {
     static const std::regex ns_regex(R"(\b[a-zA-Z_][a-zA-Z0-9_]*::)");
     return std::regex_replace(std::string(name), ns_regex, "");
 }
-  
+
 template <typename T> std::string get_pretty_type() {
   const char *mangled_name = typeid(T).name();
 #ifndef _MSC_VER

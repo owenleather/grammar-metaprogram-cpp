@@ -9,14 +9,8 @@ cc_library(
     deps = ["//source:grammar",]
 )
 
-cc_library(
-    name = "bindings",
-    hdrs = ["bindings.h"],
-    deps = [":syntax"]
-)
-
 cc_binary(
     name = "main",
     srcs = ["main.cpp"],
-    deps = [":syntax", ":bindings", "//source:node_printer",]
+    deps = [":syntax", "//source:node_printer"]
 )

@@ -1,7 +1,7 @@
 # Grammar Metaprogram Generator
 This example shows a metaprogram that can parse PEG files and a code generator that can transpile the parsed PEG syntax into an equivalent metaprogram. 
 
-It was them demonstrated on the zig language, which has a publicly available PEG specification. The result is a hello world zig program that is parsed with the generated metaprogram.
+It was them demonstrated on the [zig language](https://ziglang.org/), which has a publicly available PEG specification. The result is a hello world zig program that is parsed with the generated metaprogram.
 
 - `codegen/peg_metaprogram.h` defines PEG syntax in the C++ metaprogram. This effectively creates a parser that can parse PEG syntax.  
 - `codegen/peg_codegen.[h/cpp]` reads the syntax tree produced by the metaprogram and generates a metaprogram for that grammar.

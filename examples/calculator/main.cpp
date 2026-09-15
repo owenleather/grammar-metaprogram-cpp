@@ -20,8 +20,6 @@ int main() {
     throw std::runtime_error("Parse failed!\n");
   }
   
-  PrintBindings{}(result->value);
-  
   const auto parsed_value = Bindings{}(result->value);
   std::cout << "Parsed expression value: " << parsed_value << std::endl;
   std::cout << "Actual value: " << actual_value << std::endl;
@@ -31,4 +29,6 @@ int main() {
   } else{
     std::cout << "Parsed value does not equal actual value." << std::endl;
   }
+
+  GenericNodePrinter{}(result->value);
 }

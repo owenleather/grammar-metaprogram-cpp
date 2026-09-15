@@ -11,6 +11,7 @@ template <FixedString T> using r = Regex<T>;
 struct Expression;
 struct Factor;
 
+struct EndOfFile : Not<r<R"(.)">>{};
 struct Spacing : r<"[ \\t\\r\\n]*">{};
 struct Float : r<"[0-9]+\\.[0-9]+">{};
 struct Integer : r<"[0-9]+">{};

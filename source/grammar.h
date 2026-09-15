@@ -33,22 +33,11 @@ template <typename Rule> struct And {
   using IsAnd = void;
 };
 
-/*
-Return Types & Type Deduction Traits
-*/
-
-/*
-Recursive Definition
-*/
 template <typename GrammarT> struct Def {
   using Grammar = GrammarT;
   Grammar value;
   Def(Grammar t) : value(t) {};
 };
-
-/*
-Matchers
-*/
 
 template <typename Rule> struct Matcher;
 
@@ -197,27 +186,6 @@ template <typename Rule> struct Matcher<And<Rule>> {
 
 namespace detail {
 
-template <typename T, template <typename...> class Template>
-concept DerivedFromTemplate = requires(const T &t) {
-  []<typename... Args>(const Template<Args...> &) {}(t);
-};
-
-template <typename T>
-concept DerivedFromTuple = DerivedFromTemplate<T, std::tuple>;
-
-template <typename T>
-concept DerivedFromVariant = DerivedFromTemplate<T, std::variant>;
-
-template <typename T>
-concept DerivedFromVector = DerivedFromTemplate<T, std::vector>;
-
-template <typename T>
-concept DerivedFromWrapper = DerivedFromTemplate<T, boost::recursive_wrapper>;
-
-} // namespace detail
-
-namespace detail {
-
 // NOTE (owen): We extract the base type of a derived class by attempting to
 // call a dummy function extract_template_base. If a class is or derives from
 // Template<Args...>, this function can be called successfully, and we can use
@@ -236,15 +204,12 @@ template <typename T, template <typename...> class Template>
 using base_t = decltype(extract_template_base<Template>(std::declval<T>()));
 
 template <typename T, template <typename...> class Template>
-concept derived_from_type_template = requires {
-  typename base_t<T, Template>;
-} && !std::is_same_v<T, detail::base_t<T, Template>>;
+concept derived_from_type_template = requires { typename base_t<T, Template>; };
 
 template <typename T, template <auto...> class Template>
-concept derived_from_auto_template = requires {
-  typename base_auto_t<T, Template>;
-} && !std::is_same_v<T, detail::base_auto_t<T, Template>>;
-
+concept derived_from_auto_template =
+    requires { typename base_auto_t<T, Template>; };
+  
 // clang-format off
 template <typename T> using tuple_base_t = base_t<T, std::tuple>;
 template <typename T> using vector_base_t = base_t<T, std::vector>;
@@ -252,6 +217,13 @@ template <typename T> using variant_base_t = base_t<T, std::variant>;
 template <typename T> using optional_base_t = base_t<T, std::optional>;
 template <typename T> using wrapper_base_t = base_t<T, boost::recursive_wrapper>;
 template <typename T> using regex_base_t = base_auto_t<T, Regex>;
+
+template <typename T> concept derived_from_tuple = derived_from_type_template<T, std::tuple>;
+template <typename T> concept derived_from_vector = derived_from_type_template<T, std::vector>;
+template <typename T> concept derived_from_variant = derived_from_type_template<T, std::variant>;
+template <typename T> concept derived_from_optional = derived_from_type_template<T, std::optional>;
+template <typename T> concept derived_from_wrapper = derived_from_type_template<T, boost::recursive_wrapper>;
+template <typename T> concept derived_from_regex = derived_from_auto_template<T, Regex>;
 // clang-format on
 
 } // namespace detail
@@ -272,11 +244,15 @@ concept NotAlreadySpecialized = !requires { typename Matcher<T>::ReturnType; };
 
 template <typename T, template <typename...> class Template>
 concept DeriveAdapterEligible =
-    NotAlreadySpecialized<T> && detail::derived_from_type_template<T, Template>;
+    NotAlreadySpecialized<T> &&
+    detail::derived_from_type_template<T, Template> &&
+    !std::is_same_v<T, detail::base_t<T, Template>>;
 
 template <typename T, template <auto...> class Template>
 concept DeriveAutoAdapterEligible =
-    NotAlreadySpecialized<T> && detail::derived_from_auto_template<T, Template>;
+    NotAlreadySpecialized<T> &&
+    detail::derived_from_auto_template<T, Template> &&
+    !std::is_same_v<T, detail::base_auto_t<T, Template>>;
 
 template <typename T, template <typename...> class Template>
   requires DeriveAdapterEligible<T, Template>
@@ -288,20 +264,29 @@ template <typename T, template <auto...> class Template>
 struct DerivedRegexMatcher
     : GenericDerivedMatcher<T, detail::base_auto_t<T, Template>> {};
 
-
-template <typename T> requires DeriveAdapterEligible<T, std::tuple>
+template <typename T>
+  requires DeriveAdapterEligible<T, std::tuple>
 struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, std::tuple>> {};
-template <typename T> requires DeriveAdapterEligible<T, std::variant>
-struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, std::variant>> {};
-template <typename T> requires DeriveAdapterEligible<T, std::vector>
+template <typename T>
+  requires DeriveAdapterEligible<T, std::variant>
+struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, std::variant>> {
+};
+template <typename T>
+  requires DeriveAdapterEligible<T, std::vector>
 struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, std::vector>> {};
-template <typename T> requires DeriveAdapterEligible<T, std::optional>
-struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, std::optional>> {};
-template <typename T> requires DeriveAdapterEligible<T, boost::recursive_wrapper>
-struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, boost::recursive_wrapper>> {};
-template <typename T> requires DeriveAdapterEligible<T, Not>
+template <typename T>
+  requires DeriveAdapterEligible<T, std::optional>
+struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, std::optional>> {
+};
+template <typename T>
+  requires DeriveAdapterEligible<T, boost::recursive_wrapper>
+struct Matcher<T>
+    : GenericDerivedMatcher<T, detail::base_t<T, boost::recursive_wrapper>> {};
+template <typename T>
+  requires DeriveAdapterEligible<T, Not>
 struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, Not>> {};
-template <typename T> requires DeriveAdapterEligible<T, Def>
+template <typename T>
+  requires DeriveAdapterEligible<T, Def>
 struct Matcher<T> : GenericDerivedMatcher<T, detail::base_t<T, Def>> {};
 
 template <typename T>

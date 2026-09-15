@@ -51,7 +51,7 @@ struct GenericNodePrinter {
 
   void print_indent() const { std::cout << std::string(indent * 2, ' '); }
 
-  void operator()(const detail::DerivedFromTuple auto &t) {
+  void operator()(const detail::derived_from_tuple auto &t) {
     using DecayedType = std::decay_t<decltype(t)>;
     using TupleBase = detail::tuple_base_t<DecayedType>;
 
@@ -65,7 +65,7 @@ struct GenericNodePrinter {
         static_cast<const TupleBase &>(t));
   }
 
-  void operator()(const detail::DerivedFromVector auto &t) {
+  void operator()(const detail::derived_from_vector auto &t) {
     using DecayedType = std::decay_t<decltype(t)>;
     using VectorBase = detail::vector_base_t<DecayedType>;
 
@@ -77,14 +77,14 @@ struct GenericNodePrinter {
     }
   }
 
-  void operator()(const detail::DerivedFromVariant auto &t) {
+  void operator()(const detail::derived_from_variant auto &t) {
     using DecayedType = std::decay_t<decltype(t)>;
     using VariantBase = detail::variant_base_t<DecayedType>;
 
     std::visit(GenericNodePrinter{indent + 1}, static_cast<const VariantBase &>(t));
   }
 
-  void operator()(const detail::DerivedFromWrapper auto &t) {
+  void operator()(const detail::derived_from_wrapper auto &t) {
     using DecayedType = std::decay_t<decltype(t)>;
     using WrapperBase = detail::wrapper_base_t<DecayedType>;
 
@@ -94,7 +94,7 @@ struct GenericNodePrinter {
   void operator()(const auto &t) {
     using DecayedType = std::decay_t<decltype(t)>;
     print_indent();
-    std::cout << detail::get_pretty_type_name_no_namespace<DecayedType>() << std::endl;
+    std::cout << "auto: " << detail::get_pretty_type_name_no_namespace<DecayedType>() << std::endl;
   }
 };
 

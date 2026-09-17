@@ -1,6 +1,5 @@
-### Parsing Expression Grammar (PEG) library as a C++ metaprogramming API
-
-### Benefits of a metaprogramming API for PEG
+# Parsing Expression Grammar (PEG) library as a C++ metaprogramming API
+## Overview
 Rules define C++ types directly. This makes rule definition, matching, and binding all statically typed. 
 ```cpp
 // Each Regex<"..."> is a unique type
@@ -25,6 +24,5 @@ using MaybeOp = std::optional<Op>;
 Matcher<MaybeOp>::Match({.input = "+"})->value // -> ReturnType is std::optional<std::variant<Plus, Minus>>
 ```
 
-TODOs:
-- Avoid passing Context by value everywhere.
-- Add a one or more rule (equivalent of +). Right now vector is zero or more (*)
+## Design
+See [DESIGN.md](DESIGN.md) for the philosophy and design of this library. 

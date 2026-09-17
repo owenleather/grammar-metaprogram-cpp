@@ -26,3 +26,7 @@ Matcher<MaybeOp>::Match({.input = "+"})->value // -> ReturnType is std::optional
 
 ## Design
 See [DESIGN.md](DESIGN.md) for the philosophy and design of this library. 
+
+## Examples
+- `examples/calculator` defines a metaprogram for a calculator that interprets math as natural text and outputs a syntax tree. It then creates bindings that parses the syntax tree into the resulting double value of the calculation.
+- `examples/peg_gen` defines a metaprogram that reads PEG files themselves. It then creates a transpiler that generates a metaprogram from PEG source. Finally, it tests this by generating a metaprogram for the [zig language](https://ziglang.org/) specification and parses a hello world zig program.  
